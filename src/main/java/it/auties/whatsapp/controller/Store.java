@@ -243,7 +243,7 @@ public final class Store extends Controller<Store> {
      * for a newsletters
      */
     @JsonIgnore
-    final ConcurrentHashMap<String, SocketRequest> requests;
+    public final ConcurrentHashMap<String, SocketRequest> requests;
 
     /**
      * The non-null list of replies waiting to be fulfilled
@@ -721,6 +721,12 @@ public final class Store extends Controller<Store> {
     @SuppressWarnings("ClassEscapesDefinedScope")
     public Optional<SocketRequest> findPendingRequest(String id) {
         return id == null ? Optional.empty() : Optional.ofNullable(requests.get(id));
+    }
+    
+    public void deleteAndCompleteAllPendingRequests() {
+    	requests.values().forEach((req) -> {
+    		deleteAndComplete(req, null, false);
+    	});
     }
 
     private SocketRequest deleteAndComplete(SocketRequest request, Node response, boolean exceptionally) {

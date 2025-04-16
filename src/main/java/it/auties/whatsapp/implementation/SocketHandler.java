@@ -935,6 +935,19 @@ public class SocketHandler implements SocketListener {
     }
 
     protected void onDisconnected(DisconnectReason reason) {
+    	Date ini = new Date();
+    	while(state == SocketState.WAITING || state == SocketState.HANDSHAKE) {
+    		try {
+				Thread.sleep(500L);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+    		
+    		if(new Date().getTime() - ini.getTime() > 3000L) {
+    			break;
+    		}
+    	}
+    	
         if(state == SocketState.WAITING || state == SocketState.HANDSHAKE) {
             handleFailure(LOGIN, new RuntimeException("Cannot login: no response from Whatsapp"));
             return;

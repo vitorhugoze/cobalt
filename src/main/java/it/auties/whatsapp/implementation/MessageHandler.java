@@ -1152,7 +1152,7 @@ class MessageHandler {
 
     private void handleProtocolMessage(ChatMessageInfo info, ProtocolMessage protocolMessage) {
         switch (protocolMessage.protocolType()) {
-            case HISTORY_SYNC_NOTIFICATION -> onHistorySyncNotification(info, protocolMessage);
+            //case HISTORY_SYNC_NOTIFICATION -> onHistorySyncNotification(info, protocolMessage);
             case APP_STATE_SYNC_KEY_SHARE -> onAppStateSyncKeyShare(protocolMessage);
             case REVOKE -> onMessageRevoked(info, protocolMessage);
             case EPHEMERAL_SETTING -> onEphemeralSettings(info, protocolMessage);
