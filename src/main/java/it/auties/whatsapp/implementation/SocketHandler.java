@@ -350,6 +350,8 @@ public class SocketHandler implements SocketListener {
     }
 
     public CompletableFuture<Void> connect() {
+    	System.out.println(state.toString());
+    	
         if (state == SocketState.CONNECTED) {
             return CompletableFuture.completedFuture(null);
         }
@@ -938,12 +940,12 @@ public class SocketHandler implements SocketListener {
     	Date ini = new Date();
     	while(state == SocketState.WAITING || state == SocketState.HANDSHAKE) {
     		try {
-				Thread.sleep(500L);
+				Thread.sleep(300L);
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
     		
-    		if(new Date().getTime() - ini.getTime() > 3000L) {
+    		if(new Date().getTime() - ini.getTime() > 2500L) {
     			break;
     		}
     	}
