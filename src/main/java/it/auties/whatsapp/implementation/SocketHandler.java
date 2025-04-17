@@ -199,7 +199,18 @@ public class SocketHandler implements SocketListener {
         }
 
         var iv = keys.nextReadCounter(true);
-        var decipheredMessage = AesGcm.decrypt(iv, message, 0, message.length, readKey.get());
+        
+        byte[] decipheredMessage = null;
+        try {
+        	decipheredMessage = AesGcm.decrypt(iv, message, 0, message.length, readKey.get());
+		} catch (RuntimeException e) {
+			e.printStackTrace();
+		}
+        
+        if (decipheredMessage == null) {
+        	return;
+        }
+        
         try(var decoder = new BinaryDecoder(decipheredMessage)) {
             var node = decoder.decode();
             onNodeReceived(node);
