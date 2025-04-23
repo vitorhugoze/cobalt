@@ -4,9 +4,15 @@ import it.auties.whatsapp.controller.ControllerSerializer;
 import it.auties.whatsapp.controller.KeysBuilder;
 import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.controller.StoreKeysPair;
+import it.auties.whatsapp.controller.builtin.ProtobufControllerSerializer;
 import it.auties.whatsapp.model.mobile.PhoneNumber;
 import it.auties.whatsapp.model.mobile.SixPartsKeys;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -59,6 +65,8 @@ public final class ConnectionBuilder<T extends OptionsBuilder<T>> {
         var sessionUuid = Objects.requireNonNullElseGet(uuid, UUID::randomUUID);
         var sessionStoreAndKeys = serializer.deserializeStoreKeysPair(sessionUuid, null, null, clientType)
                 .orElseGet(() -> serializer.newStoreKeysPair(sessionUuid, null, null, clientType));
+        
+        deduplicateConnections(sessionStoreAndKeys.store());
         return createConnection(sessionStoreAndKeys);
     }
 
@@ -73,6 +81,8 @@ public final class ConnectionBuilder<T extends OptionsBuilder<T>> {
     public T newConnection(long phoneNumber) {
         var sessionStoreAndKeys = serializer.deserializeStoreKeysPair(null, phoneNumber, null, clientType)
                 .orElseGet(() -> serializer.newStoreKeysPair(UUID.randomUUID(), phoneNumber, null, clientType));
+        
+        deduplicateConnections(sessionStoreAndKeys.store());
         return createConnection(sessionStoreAndKeys);
     }
 
@@ -118,7 +128,59 @@ public final class ConnectionBuilder<T extends OptionsBuilder<T>> {
                 .orElse(null);
         var store = Store.newStore(uuid, phoneNumber, null, ClientType.MOBILE);
         store.setSerializer(serializer);
+        
+        deduplicateConnections(store);
         return createConnection(new StoreKeysPair(store, keys));
+    }
+    
+    /**Delete all connections that are not the new one*/
+    public void deduplicateConnections(Store newStore) {
+    	if(newStore.phoneNumber().isEmpty())
+    		return;
+    	
+    	Long phoneNumber = newStore.phoneNumber().get().number();
+    	LinkedList<UUID> listaIds = serializer.listIds(ClientType.WEB);
+    	
+    	Path path = ProtobufControllerSerializer.DEFAULT_SERIALIZER_PATH.resolve("web");
+    	try {
+			Files.walk(path, 1).forEach(p -> {
+				String connId = p.getFileName().toString();
+				if(connId.equals("web") || newStore.uuid().toString().equals(connId)) {
+					return;
+				}
+				
+				UUID uuid = null;
+				try {
+					uuid = UUID.fromString(connId);
+				} catch (IllegalArgumentException e) {
+					//TODO
+					return;
+				}
+				
+				var optStore = serializer.deserializeStore(ClientType.WEB, uuid);
+	    		if(optStore.isEmpty())
+	    			return;
+	    		
+	    		var store = optStore.get();
+	    		if(store.phoneNumber().isEmpty())
+	    			return;
+	    		
+	    		if(phoneNumber.equals(store.phoneNumber().get().number())) {
+					try {
+						for(File f : p.toFile().listFiles()) {
+							f.delete();
+						}
+						
+						Files.delete(p);
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+	    		}
+				
+			});
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
     }
 
     /**

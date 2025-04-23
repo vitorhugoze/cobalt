@@ -506,7 +506,9 @@ abstract class FileControllerSerializer implements ControllerSerializer {
     private Path getSessionFile(ClientType clientType, String uuid, String fileName) {
         try {
             var result = getSessionDirectory(clientType, uuid).resolve(fileName);
-            Files.createDirectories(result.getParent());
+            if(!Files.exists(result.getParent())) {
+            	Files.createDirectories(result.getParent());
+            }
             return result;
         } catch (IOException exception) {
             throw new UncheckedIOException("Cannot create directory", exception);
