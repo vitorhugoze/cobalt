@@ -742,6 +742,7 @@ public final class Store extends Controller<Store> {
      */
     public void resolveAllPendingRequests() {
         requests.values().forEach(request -> request.complete(null, false));
+        requests.clear();
     }
 
     /**
