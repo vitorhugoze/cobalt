@@ -1,23 +1,21 @@
 package it.auties.whatsapp.controller.builtin;
 
-import it.auties.protobuf.stream.ProtobufInputStream;
-import it.auties.protobuf.stream.ProtobufOutputStream;
-import it.auties.whatsapp.controller.*;
-import it.auties.whatsapp.model.chat.Chat;
-import it.auties.whatsapp.model.chat.ChatSpec;
-import it.auties.whatsapp.model.jid.Jid;
-import it.auties.whatsapp.model.newsletter.Newsletter;
-import it.auties.whatsapp.model.newsletter.NewsletterSpec;
-
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+
+import it.auties.protobuf.stream.ProtobufInputStream;
+import it.auties.protobuf.stream.ProtobufOutputStream;
+import it.auties.whatsapp.controller.Keys;
+import it.auties.whatsapp.controller.KeysSpec;
+import it.auties.whatsapp.controller.Store;
+import it.auties.whatsapp.controller.StoreSpec;
+import it.auties.whatsapp.model.chat.Chat;
+import it.auties.whatsapp.model.chat.ChatSpec;
+import it.auties.whatsapp.model.newsletter.Newsletter;
+import it.auties.whatsapp.model.newsletter.NewsletterSpec;
 
 public class ProtobufControllerSerializer extends FileControllerSerializer {
     public static final Path DEFAULT_SERIALIZER_PATH = Path.of(System.getProperty("user.home") + "/.cobalt/");
@@ -65,16 +63,16 @@ public class ProtobufControllerSerializer extends FileControllerSerializer {
 
     @Override
     void encodeChat(Chat chat, Path path) {
-        try {
-            var tempFile = Files.createTempFile(path.getFileName().toString(), ".tmp");
-            try(var stream = Files.newOutputStream(tempFile)) {
-                ChatSpec.encode(chat, ProtobufOutputStream.toStream(stream));
-                stream.flush();
-            }
-            Files.move(tempFile, path, StandardCopyOption.REPLACE_EXISTING);
-        }catch (IOException exception) {
-            throw new UncheckedIOException(exception);
-        }
+//        try {
+//            var tempFile = Files.createTempFile(path.getFileName().toString(), ".tmp");
+//            try(var stream = Files.newOutputStream(tempFile)) {
+//                ChatSpec.encode(chat, ProtobufOutputStream.toStream(stream));
+//                stream.flush();
+//            }
+//            Files.move(tempFile, path, StandardCopyOption.REPLACE_EXISTING);
+//        }catch (IOException exception) {
+//            throw new UncheckedIOException(exception);
+//        }
     }
 
     @Override

@@ -1,5 +1,26 @@
 package it.auties.whatsapp.controller.builtin;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedList;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import it.auties.whatsapp.api.ClientType;
 import it.auties.whatsapp.controller.Controller;
 import it.auties.whatsapp.controller.ControllerSerializer;
@@ -14,18 +35,6 @@ import it.auties.whatsapp.model.mobile.PhoneNumber;
 import it.auties.whatsapp.model.newsletter.Newsletter;
 import it.auties.whatsapp.model.sync.HistorySyncMessage;
 import it.auties.whatsapp.util.ImmutableLinkedList;
-
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.FileTime;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 abstract class FileControllerSerializer implements ControllerSerializer {
     private static final String CHAT_PREFIX = "chat_";
@@ -426,18 +435,18 @@ abstract class FileControllerSerializer implements ControllerSerializer {
     }
 
     private void deserializeChat(Store store, Path chatFile) {
-        try {
-            var chat = decodeChat(chatFile);
-            jidsHashCodes.put(chat.jid(), chat.hashCode());
-            for (var message : chat.messages()) {
-                message.messageInfo().setChat(chat);
-                store.findContactByJid(message.messageInfo().senderJid())
-                        .ifPresent(message.messageInfo()::setSender);
-            }
-            store.addChatDirect(chat);
-        } catch (IOException exception) {
-            store.addChatDirect(rescueChat(chatFile));
-        }
+//        try {
+//            var chat = decodeChat(chatFile);
+//            jidsHashCodes.put(chat.jid(), chat.hashCode());
+//            for (var message : chat.messages()) {
+//                message.messageInfo().setChat(chat);
+//                store.findContactByJid(message.messageInfo().senderJid())
+//                        .ifPresent(message.messageInfo()::setSender);
+//            }
+//            store.addChatDirect(chat);
+//        } catch (IOException exception) {
+//            store.addChatDirect(rescueChat(chatFile));
+//        }
     }
 
     private Chat rescueChat(Path entry) {
