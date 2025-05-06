@@ -1,7 +1,53 @@
 package it.auties.whatsapp.implementation;
 
-import it.auties.whatsapp.api.*;
+import static it.auties.whatsapp.api.ErrorHandler.Location.HISTORY_SYNC;
+import static it.auties.whatsapp.api.ErrorHandler.Location.LOGIN;
+import static it.auties.whatsapp.api.ErrorHandler.Location.STREAM;
+import static it.auties.whatsapp.api.ErrorHandler.Location.UNKNOWN;
+import static java.util.concurrent.TimeUnit.SECONDS;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.SocketException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.function.Function;
+
+import it.auties.whatsapp.api.ClientType;
+import it.auties.whatsapp.api.DisconnectReason;
+import it.auties.whatsapp.api.ErrorHandler;
 import it.auties.whatsapp.api.ErrorHandler.Location;
+import it.auties.whatsapp.api.SocketEvent;
+import it.auties.whatsapp.api.WebVerificationHandler;
+import it.auties.whatsapp.api.Whatsapp;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.crypto.AesGcm;
@@ -11,7 +57,17 @@ import it.auties.whatsapp.listener.Listener;
 import it.auties.whatsapp.model.action.Action;
 import it.auties.whatsapp.model.business.BusinessCategory;
 import it.auties.whatsapp.model.call.Call;
-import it.auties.whatsapp.model.chat.*;
+import it.auties.whatsapp.model.chat.Chat;
+import it.auties.whatsapp.model.chat.ChatMetadata;
+import it.auties.whatsapp.model.chat.ChatParticipant;
+import it.auties.whatsapp.model.chat.ChatPastParticipant;
+import it.auties.whatsapp.model.chat.ChatSetting;
+import it.auties.whatsapp.model.chat.ChatSettingPolicy;
+import it.auties.whatsapp.model.chat.CommunityParticipant;
+import it.auties.whatsapp.model.chat.CommunitySetting;
+import it.auties.whatsapp.model.chat.GroupParticipant;
+import it.auties.whatsapp.model.chat.GroupRole;
+import it.auties.whatsapp.model.chat.GroupSetting;
 import it.auties.whatsapp.model.contact.Contact;
 import it.auties.whatsapp.model.contact.ContactStatus;
 import it.auties.whatsapp.model.info.ChatMessageInfo;
@@ -49,27 +105,12 @@ import it.auties.whatsapp.util.Bytes;
 import it.auties.whatsapp.util.Clock;
 import it.auties.whatsapp.util.Json;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.SocketException;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.time.ZonedDateTime;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
-import java.util.function.Function;
-
-import static it.auties.whatsapp.api.ErrorHandler.Location.*;
-import static java.util.concurrent.TimeUnit.SECONDS;
-
 @SuppressWarnings("unused")
 public class SocketHandler implements SocketListener {
-    private static final Set<UUID> connectedUuids = ConcurrentHashMap.newKeySet();
-    private static final Set<Long> connectedPhoneNumbers = ConcurrentHashMap.newKeySet();
-    private static final Set<String> connectedAlias = ConcurrentHashMap.newKeySet();
-    private static final int PING_TIMEOUT = 20;
+    public static final Set<UUID> connectedUuids = ConcurrentHashMap.newKeySet();
+    public static final Set<Long> connectedPhoneNumbers = ConcurrentHashMap.newKeySet();
+    public static final Set<String> connectedAlias = ConcurrentHashMap.newKeySet();
+    public static final int PING_TIMEOUT = 20;
 
     public static boolean isConnected(UUID uuid) {
         return connectedUuids.contains(uuid);
@@ -81,6 +122,36 @@ public class SocketHandler implements SocketListener {
 
     public static boolean isConnected(String id) {
         return connectedAlias.contains(id);
+    }
+    
+    public static void removeConnection(UUID uuid) {
+    	connectedUuids.remove(uuid);
+    }
+        
+    public static void removePhoneNumber(long phoneNumber) {
+    	connectedPhoneNumbers.remove(phoneNumber);
+    }
+        
+    public static void removeAlias(String alias) {
+    	connectedAlias.remove(alias);
+    }
+    
+    public static void cleanConnections() {
+    	connectedUuids.clear();
+    }
+    
+    public static void clearPhoneNumbers() {
+    	connectedPhoneNumbers.clear();
+    }
+    
+    public static void clearAliases() {
+    	connectedAlias.clear();
+    }
+    
+    public static void clearAll() {
+    	cleanConnections();
+    	clearPhoneNumbers();
+    	clearAliases();
     }
 
     private SocketSession session;
@@ -118,7 +189,7 @@ public class SocketHandler implements SocketListener {
         this.pastParticipants = new ConcurrentHashMap<>();
     }
 
-    private void onShutdown(boolean reconnect) {
+    public void onShutdown(boolean reconnect) {
         if (state != SocketState.LOGGED_OUT && state != SocketState.RESTORE && state != SocketState.BANNED) {
             keys.dispose();
             store.dispose();
@@ -361,8 +432,6 @@ public class SocketHandler implements SocketListener {
     }
 
     public CompletableFuture<Void> connect() {
-    	System.out.println(state.toString());
-    	
         if (state == SocketState.CONNECTED) {
             return CompletableFuture.completedFuture(null);
         }
@@ -1157,7 +1226,7 @@ public class SocketHandler implements SocketListener {
         return messageHandler.querySessions(List.of(jid), true);
     }
 
-    private void dispose() {
+    public void dispose() {
         onSocketEvent(SocketEvent.CLOSE);
         streamHandler.dispose();
         messageHandler.dispose();
@@ -1216,7 +1285,7 @@ public class SocketHandler implements SocketListener {
         return this.store;
     }
 
-    protected void setState(SocketState state) {
+    public void setState(SocketState state) {
         this.state = state;
     }
 

@@ -1,5 +1,49 @@
 package it.auties.whatsapp.api;
 
+import static it.auties.whatsapp.model.contact.ContactStatus.AVAILABLE;
+import static it.auties.whatsapp.model.contact.ContactStatus.COMPOSING;
+import static it.auties.whatsapp.model.contact.ContactStatus.RECORDING;
+import static it.auties.whatsapp.model.contact.ContactStatus.UNAVAILABLE;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+
+import javax.imageio.ImageIO;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.zxing.BinaryBitmap;
 import com.google.zxing.ChecksumException;
@@ -8,6 +52,7 @@ import com.google.zxing.NotFoundException;
 import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
 import com.google.zxing.common.HybridBinarizer;
 import com.google.zxing.qrcode.QRCodeReader;
+
 import it.auties.curve25519.Curve25519;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
@@ -20,21 +65,60 @@ import it.auties.whatsapp.implementation.SocketState;
 import it.auties.whatsapp.listener.Listener;
 import it.auties.whatsapp.listener.ListenerConsumer;
 import it.auties.whatsapp.listener.RegisterListenerProcessor;
-import it.auties.whatsapp.model.action.*;
-import it.auties.whatsapp.model.business.*;
+import it.auties.whatsapp.model.action.Action;
+import it.auties.whatsapp.model.action.ArchiveChatAction;
+import it.auties.whatsapp.model.action.ClearChatAction;
+import it.auties.whatsapp.model.action.DeleteChatAction;
+import it.auties.whatsapp.model.action.DeleteMessageForMeAction;
+import it.auties.whatsapp.model.action.MarkChatAsReadAction;
+import it.auties.whatsapp.model.action.MuteAction;
+import it.auties.whatsapp.model.action.PinAction;
+import it.auties.whatsapp.model.action.StarAction;
+import it.auties.whatsapp.model.business.BusinessCatalogEntry;
+import it.auties.whatsapp.model.business.BusinessCategory;
+import it.auties.whatsapp.model.business.BusinessCollectionEntry;
+import it.auties.whatsapp.model.business.BusinessProfile;
+import it.auties.whatsapp.model.business.BusinessVerifiedNameCertificate;
+import it.auties.whatsapp.model.business.BusinessVerifiedNameCertificateSpec;
 import it.auties.whatsapp.model.call.Call;
 import it.auties.whatsapp.model.call.CallStatus;
-import it.auties.whatsapp.model.chat.*;
+import it.auties.whatsapp.model.chat.Chat;
+import it.auties.whatsapp.model.chat.ChatEphemeralTimer;
+import it.auties.whatsapp.model.chat.ChatMetadata;
+import it.auties.whatsapp.model.chat.ChatMute;
+import it.auties.whatsapp.model.chat.ChatParticipant;
+import it.auties.whatsapp.model.chat.ChatPastParticipant;
+import it.auties.whatsapp.model.chat.ChatPastParticipantBuilder;
+import it.auties.whatsapp.model.chat.ChatSettingPolicy;
+import it.auties.whatsapp.model.chat.CommunitySetting;
+import it.auties.whatsapp.model.chat.GroupAction;
+import it.auties.whatsapp.model.chat.GroupPastParticipants;
+import it.auties.whatsapp.model.chat.GroupPastParticipantsBuilder;
+import it.auties.whatsapp.model.chat.GroupSetting;
 import it.auties.whatsapp.model.companion.CompanionLinkResult;
 import it.auties.whatsapp.model.contact.Contact;
 import it.auties.whatsapp.model.contact.ContactStatus;
-import it.auties.whatsapp.model.info.*;
+import it.auties.whatsapp.model.info.ChatMessageInfo;
+import it.auties.whatsapp.model.info.ChatMessageInfoBuilder;
+import it.auties.whatsapp.model.info.ContextInfo;
+import it.auties.whatsapp.model.info.ContextInfoBuilder;
+import it.auties.whatsapp.model.info.DeviceContextInfoBuilder;
+import it.auties.whatsapp.model.info.MessageIndexInfo;
+import it.auties.whatsapp.model.info.MessageInfo;
+import it.auties.whatsapp.model.info.NewsletterMessageInfo;
+import it.auties.whatsapp.model.info.QuotedMessageInfo;
 import it.auties.whatsapp.model.jid.Jid;
 import it.auties.whatsapp.model.jid.JidProvider;
 import it.auties.whatsapp.model.jid.JidServer;
 import it.auties.whatsapp.model.media.AttachmentType;
 import it.auties.whatsapp.model.media.MediaFile;
-import it.auties.whatsapp.model.message.model.*;
+import it.auties.whatsapp.model.message.model.ChatMessageKey;
+import it.auties.whatsapp.model.message.model.ChatMessageKeyBuilder;
+import it.auties.whatsapp.model.message.model.ContextualMessage;
+import it.auties.whatsapp.model.message.model.MediaMessage;
+import it.auties.whatsapp.model.message.model.Message;
+import it.auties.whatsapp.model.message.model.MessageContainer;
+import it.auties.whatsapp.model.message.model.MessageStatus;
 import it.auties.whatsapp.model.message.server.ProtocolMessage;
 import it.auties.whatsapp.model.message.server.ProtocolMessageBuilder;
 import it.auties.whatsapp.model.message.standard.CallMessageBuilder;
@@ -43,7 +127,12 @@ import it.auties.whatsapp.model.message.standard.ReactionMessageBuilder;
 import it.auties.whatsapp.model.message.standard.TextMessage;
 import it.auties.whatsapp.model.mobile.AccountInfo;
 import it.auties.whatsapp.model.mobile.CountryLocale;
-import it.auties.whatsapp.model.newsletter.*;
+import it.auties.whatsapp.model.mobile.PhoneNumber;
+import it.auties.whatsapp.model.newsletter.Newsletter;
+import it.auties.whatsapp.model.newsletter.NewsletterMetadata;
+import it.auties.whatsapp.model.newsletter.NewsletterName;
+import it.auties.whatsapp.model.newsletter.NewsletterViewerMetadata;
+import it.auties.whatsapp.model.newsletter.NewsletterViewerRole;
 import it.auties.whatsapp.model.node.Attributes;
 import it.auties.whatsapp.model.node.Node;
 import it.auties.whatsapp.model.privacy.GdprAccountReport;
@@ -51,38 +140,68 @@ import it.auties.whatsapp.model.privacy.PrivacySettingEntry;
 import it.auties.whatsapp.model.privacy.PrivacySettingType;
 import it.auties.whatsapp.model.privacy.PrivacySettingValue;
 import it.auties.whatsapp.model.product.LeaveNewsletterRequest;
-import it.auties.whatsapp.model.request.*;
+import it.auties.whatsapp.model.request.AcceptAdminInviteNewsletterRequest;
+import it.auties.whatsapp.model.request.CreateAdminInviteNewsletterRequest;
+import it.auties.whatsapp.model.request.CreateNewsletterRequest;
+import it.auties.whatsapp.model.request.JoinNewsletterRequest;
+import it.auties.whatsapp.model.request.MessageSendRequest;
+import it.auties.whatsapp.model.request.NewsletterSubscribersRequest;
+import it.auties.whatsapp.model.request.QueryNewsletterRequest;
+import it.auties.whatsapp.model.request.RecommendedNewslettersRequest;
+import it.auties.whatsapp.model.request.RevokeAdminInviteNewsletterRequest;
+import it.auties.whatsapp.model.request.UpdateNewsletterRequest;
 import it.auties.whatsapp.model.request.UpdateNewsletterRequest.UpdatePayload;
-import it.auties.whatsapp.model.response.*;
+import it.auties.whatsapp.model.request.UserChosenNameRequest;
+import it.auties.whatsapp.model.response.AcceptAdminInviteNewsletterResponse;
+import it.auties.whatsapp.model.response.ContactAboutResponse;
+import it.auties.whatsapp.model.response.CreateAdminInviteNewsletterResponse;
+import it.auties.whatsapp.model.response.HasWhatsappResponse;
+import it.auties.whatsapp.model.response.NewsletterResponse;
+import it.auties.whatsapp.model.response.NewsletterSubscribersResponse;
+import it.auties.whatsapp.model.response.RecommendedNewslettersResponse;
+import it.auties.whatsapp.model.response.RevokeAdminInviteNewsletterResponse;
+import it.auties.whatsapp.model.response.UserChosenNameResponse;
 import it.auties.whatsapp.model.setting.Setting;
-import it.auties.whatsapp.model.signal.auth.*;
+import it.auties.whatsapp.model.signal.auth.DeviceIdentityBuilder;
+import it.auties.whatsapp.model.signal.auth.DeviceIdentitySpec;
+import it.auties.whatsapp.model.signal.auth.KeyIndexListBuilder;
+import it.auties.whatsapp.model.signal.auth.KeyIndexListSpec;
+import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentityBuilder;
+import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentityHMACBuilder;
+import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentityHMACSpec;
+import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentitySpec;
+import it.auties.whatsapp.model.signal.auth.SignedKeyIndexListBuilder;
+import it.auties.whatsapp.model.signal.auth.SignedKeyIndexListSpec;
 import it.auties.whatsapp.model.signal.keypair.SignalKeyPair;
-import it.auties.whatsapp.model.sync.*;
+import it.auties.whatsapp.model.sync.ActionMessageRangeSync;
+import it.auties.whatsapp.model.sync.ActionValueSync;
+import it.auties.whatsapp.model.sync.AppStateSyncKey;
+import it.auties.whatsapp.model.sync.AppStateSyncKeyBuilder;
+import it.auties.whatsapp.model.sync.AppStateSyncKeyData;
+import it.auties.whatsapp.model.sync.AppStateSyncKeyDataBuilder;
+import it.auties.whatsapp.model.sync.AppStateSyncKeyFingerprint;
+import it.auties.whatsapp.model.sync.AppStateSyncKeyFingerprintBuilder;
+import it.auties.whatsapp.model.sync.AppStateSyncKeyId;
+import it.auties.whatsapp.model.sync.AppStateSyncKeyShareBuilder;
+import it.auties.whatsapp.model.sync.DeviceListMetadataBuilder;
+import it.auties.whatsapp.model.sync.HistorySync;
+import it.auties.whatsapp.model.sync.HistorySyncBuilder;
+import it.auties.whatsapp.model.sync.HistorySyncNotificationBuilder;
+import it.auties.whatsapp.model.sync.HistorySyncSpec;
+import it.auties.whatsapp.model.sync.InitialSecurityNotificationSettingSync;
+import it.auties.whatsapp.model.sync.MediaRetryNotificationSpec;
+import it.auties.whatsapp.model.sync.PatchRequest;
 import it.auties.whatsapp.model.sync.PatchRequest.PatchEntry;
+import it.auties.whatsapp.model.sync.PatchType;
+import it.auties.whatsapp.model.sync.PushName;
 import it.auties.whatsapp.model.sync.RecordSync.Operation;
-import it.auties.whatsapp.util.*;
-
-import javax.imageio.ImageIO;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.ZonedDateTime;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
-
-import static it.auties.whatsapp.model.contact.ContactStatus.*;
+import it.auties.whatsapp.model.sync.ServerErrorReceipt;
+import it.auties.whatsapp.model.sync.ServerErrorReceiptSpec;
+import it.auties.whatsapp.util.Bytes;
+import it.auties.whatsapp.util.Clock;
+import it.auties.whatsapp.util.Json;
+import it.auties.whatsapp.util.Medias;
+import it.auties.whatsapp.util.Validate;
 
 /**
  * A class used to interface a user to WhatsappWeb's WebSocket
@@ -96,7 +215,7 @@ public class Whatsapp {
 
     // The instances are added and removed when the client connects/disconnects
     // This is to make sure that the instances remain in memory only as long as it's needed
-    private static final Map<UUID, Whatsapp> instances = new ConcurrentHashMap<>();
+    public static final Map<UUID, Whatsapp> instances = new ConcurrentHashMap<>();
     private static final MethodHandle registerListenersMethod = getRegisterListenersMethod();
     private static final ConcurrentMap<Jid, Boolean> usersCache = new ConcurrentHashMap<>();
 
@@ -109,11 +228,24 @@ public class Whatsapp {
         }
     }
 
-    static Optional<Whatsapp> getInstanceByUuid(UUID uuid) {
+    public static Optional<Whatsapp> getInstanceByUuid(UUID uuid) {
         return Optional.ofNullable(instances.get(uuid));
     }
+    
+    public static List<Whatsapp> getInstancesByPhoneNumber(long phoneNumber) {
+    	List<Whatsapp> sameNumberInstances = new ArrayList<Whatsapp>();
+    	
+    	for (Whatsapp i : instances.values()) {
+    		Optional<PhoneNumber> optNumber = i.store().phoneNumber();
+    		if(optNumber.isPresent() && optNumber.get().number() == phoneNumber) {
+    			sameNumberInstances.add(i);
+    		}
+    	}
+    	
+    	return sameNumberInstances;
+    }
 
-    static void removeInstanceByUuid(UUID uuid) {
+    public static void removeInstanceByUuid(UUID uuid) {
         instances.remove(uuid);
     }
 
@@ -147,7 +279,7 @@ public class Whatsapp {
         return SocketHandler.isConnected(alias);
     }
 
-    private final SocketHandler socketHandler;
+    public final SocketHandler socketHandler;
     private final Set<Jid> trustedContacts;
     protected Whatsapp(Store store, Keys keys, ErrorHandler errorHandler, WebVerificationHandler webVerificationHandler) {
         this.socketHandler = new SocketHandler(this, store, keys, errorHandler, webVerificationHandler);
